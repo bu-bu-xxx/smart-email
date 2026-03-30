@@ -1,6 +1,6 @@
 <div align="center" style="display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap;">
 
-<img src="./icon.png" width="120" height="120">
+<img src="./images/icon.png" width="120" height="120">
 
 <h1 style="margin: 0;">Smart Email</h1>
 
