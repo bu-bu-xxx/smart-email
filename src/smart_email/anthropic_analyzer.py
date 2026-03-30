@@ -1,0 +1,350 @@
+"""
+Anthropic API 分析器 - 支持 Claude 系列模型
+实现与 AIAnalyzer 相同的接口
+"""
+import os
+import base64
+import time
+import json
+import re
+import threading
+from typing import Dict, Tuple, List, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+try:
+    import anthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
+
+
+class AnthropicAnalyzer:
+    """Anthropic AI 分析器 - 支持 Claude 系列模型"""
+
+    def __init__(self, api_key: str, model: str,
+                 base_url: str = "",
+                 max_concurrent: int = 5,
+                 multimodal_analysis: bool = False,
+                 retry_count: int = 3, retry_base_delay: float = 1.0):
+        """
+        初始化 Anthropic 分析器
+
+        Args:
+            api_key: Anthropic API Key
+            model: 模型名称，默认 claude-sonnet-4-20250514
+            max_concurrent: 最大并发数
+            multimodal_analysis: 是否启用多模态分析
+            retry_count: 重试次数
+            retry_base_delay: 重试基础延迟（秒）
+        """
+        self.api_key = api_key
+        if not model:
+            raise ValueError(
+                "❌ 未配置模型名称\n"
+                "请在 ~/.openclaw/.env 中添加以下配置:\n"
+                "  SMART_EMAIL_ANTHROPIC_MODEL=your_model_name"
+            )
+        
+        self.model = model
+        self.base_url = base_url
+        self.max_concurrent = max_concurrent
+        self.multimodal_analysis = multimodal_analysis
+        self.retry_count = retry_count
+        self.retry_base_delay = retry_base_delay
+
+        # 验证配置
+        if not api_key:
+            raise ValueError("❌ 未配置 API Key，请检查环境变量")
+
+        if not ANTHROPIC_AVAILABLE:
+            raise ImportError(
+                "❌ 未安装 anthropic 包\n"
+                "请运行: pip install anthropic"
+            )
+
+        self.client = anthropic.Anthropic(api_key=api_key, base_url=base_url or None)
+
+        # 用于并发控制的信号量
+        self._semaphore = threading.Semaphore(max_concurrent)
+        self._lock = threading.Lock()
+        self._active_requests = 0
+
+    def _encode_image_to_base64(self, image_path: str) -> Optional[str]:
+        """
+        将图片文件编码为 base64
+
+        Args:
+            image_path: 图片文件路径
+
+        Returns:
+            base64 编码的字符串，失败返回 None
+        """
+        try:
+            with open(image_path, 'rb') as f:
+                image_data = f.read()
+            return base64.b64encode(image_data).decode('utf-8')
+        except Exception as e:
+            print(f"  [Anthropic] 图片编码失败 {image_path}: {e}")
+            return None
+
+    def _build_multimodal_messages(self, prompt: str, image_paths: List[str]) -> List[Dict]:
+        """
+        构建多模态消息（文本 + 图片）
+
+        Args:
+            prompt: 文本提示
+            image_paths: 图片路径列表
+
+        Returns:
+            Anthropic 格式的消息列表
+        """
+        content = [{"type": "text", "text": prompt}]
+
+        for img_path in image_paths:
+            base64_image = self._encode_image_to_base64(img_path)
+            if base64_image:
+                # 检测图片类型
+                ext = os.path.splitext(img_path)[1].lower()
+                media_type = {
+                    '.png': 'image/png',
+                    '.jpg': 'image/jpeg',
+                    '.jpeg': 'image/jpeg',
+                    '.gif': 'image/gif',
+                    '.webp': 'image/webp'
+                }.get(ext, 'image/jpeg')
+
+                content.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": media_type,
+                        "data": base64_image
+                    }
+                })
+
+        return [
+            {"role": "user", "content": content}
+        ]
+
+    def _call_api_with_retry(self, messages: list, system: str = "", max_tokens: int = 1024) -> str:
+        """
+        带重试机制的 API 调用
+
+        重试策略:
+        - 重试次数: 默认 3 次
+        - 重试间隔: 指数退避 (1s, 2s, 4s, ...)
+        - 触发条件: 网络错误、限流、5xx 错误
+        """
+        last_error = None
+
+        for attempt in range(self.retry_count):
+            try:
+                response = self.client.messages.create(
+                    model=self.model,
+                    max_tokens=max_tokens,
+                    system=system,
+                    messages=messages,
+                    # Anthropic 支持 JSON 模式
+                )
+                # 兼容 ThinkingBlock（MiniMax 等模型可能返回）
+                for block in response.content:
+                    if hasattr(block, 'text') and block.text:
+                        return block.text.strip()
+                # 如果没有找到文本块，尝试从 thinking block 获取
+                for block in response.content:
+                    if hasattr(block, 'thinking'):
+                        return block.thinking.strip()
+                raise ValueError("响应中未找到文本内容")
+
+            except Exception as e:
+                last_error = e
+                error_str = str(e).lower()
+
+                # 判断是否应该重试
+                should_retry = False
+                if "rate limit" in error_str or "429" in error_str:
+                    should_retry = True
+                    print(f"  [Anthropic] 限流 (尝试 {attempt + 1}/{self.retry_count})")
+                elif "500" in error_str or "502" in error_str or "503" in error_str:
+                    should_retry = True
+                    print(f"  [Anthropic] 服务器错误 (尝试 {attempt + 1}/{self.retry_count})")
+                elif "connection" in error_str:
+                    should_retry = True
+                    print(f"  [Anthropic] 连接错误 (尝试 {attempt + 1}/{self.retry_count})")
+
+                if should_retry and attempt < self.retry_count - 1:
+                    delay = self.retry_base_delay * (2 ** attempt)  # 指数退避
+                    print(f"  [Anthropic] 等待 {delay}s 后重试...")
+                    time.sleep(delay)
+                elif should_retry:
+                    print(f"  [Anthropic] API 调用最终失败: {e}")
+                    raise
+                else:
+                    # 客户端错误，不重试
+                    print(f"  [Anthropic] API 客户端错误: {e}")
+                    raise
+
+        # 所有重试都失败了
+        raise last_error if last_error else Exception("API 调用失败")
+
+    def _call_api_with_limit(self, messages: list, system: str = "", max_tokens: int = 1024) -> str:
+        """
+        带并发限制和重试机制的 API 调用
+        """
+        with self._semaphore:
+            with self._lock:
+                self._active_requests += 1
+                print(f"  [Anthropic] 并发请求: {self._active_requests}/{self.max_concurrent}")
+
+            try:
+                return self._call_api_with_retry(messages, system, max_tokens)
+            finally:
+                with self._lock:
+                    self._active_requests -= 1
+
+    # === v1 方法已废弃 (2026-03-30) ===
+    # check_urgent() 和 summarize_email() 已删除
+    # 所有分析统一使用 analyze_email() v2 方法（单次 JSON 调用）
+
+    def analyze_email(self, email_data: Dict) -> Tuple[bool, str, str]:
+        """
+        分析单封邮件，一次调用返回所有字段
+
+        Returns:
+            (是否紧急, 判断理由, 邮件摘要)
+        """
+        subject = email_data.get('subject', '')
+        sender = email_data.get('sender', '')
+        body = email_data.get('body_text', '')[:2000]
+
+        prompt = f"""请分析以下邮件，输出 JSON 格式结果。
+
+邮件信息：
+发件人: {sender}
+主题: {subject}
+正文: {body}
+
+输出格式：
+{{
+  "is_urgent": true/false,
+  "reason": "一句话说明紧急原因或非紧急理由（不少于5个字）",
+  "summary": "50字以内的邮件核心内容摘要"
+}}
+
+要求：
+- is_urgent: 基于"是否涉及收件人本人、是否有紧急行动要求、是否来自重要联系人、是否涉及重要事务"判断
+- reason: 必须是一句话，不能为空，不能少于5个字
+- summary: 严格控制在50字以内
+- 只输出 JSON，不要有其他解释文字"""
+
+        system = "你是一个邮件助手，负责判断邮件紧急程度并生成摘要。"
+
+        try:
+            # 检查是否开启多模态分析
+            image_paths = []
+            if self.multimodal_analysis:
+                saved_attachments = email_data.get('saved_attachments', [])
+                for att in saved_attachments:
+                    if att.get('is_inline') and att.get('content_type', '').startswith('image/'):
+                        image_paths.append(att['local_path'])
+
+                if image_paths:
+                    print(f"  [Anthropic] 多模态分析: 包含 {len(image_paths)} 张正文图片")
+                    messages = self._build_multimodal_messages(prompt, image_paths)
+                else:
+                    messages = [{"role": "user", "content": prompt}]
+            else:
+                messages = [{"role": "user", "content": prompt}]
+
+            result = self._call_api_with_limit(messages, system=system, max_tokens=1024)
+
+            # 解析 JSON 结果
+            json_match = re.search(r'\{[^{}]*\}', result, re.DOTALL)
+            if not json_match:
+                # 尝试更宽松的匹配
+                json_str = result.strip()
+                if json_str.startswith('```'):
+                    json_str = re.sub(r'^```json?', '', json_str)
+                    json_str = re.sub(r'```$', '', json_str)
+                json_str = json_str.strip()
+
+                try:
+                    parsed = json.loads(json_str)
+                except:
+                    raise ValueError(f"无法解析 LLM 返回: {result[:200]}")
+            else:
+                json_str = json_match.group()
+                try:
+                    parsed = json.loads(json_str)
+                except:
+                    raise ValueError(f"无法解析 LLM 返回: {result[:200]}")
+
+            # 验证结果
+            is_urgent = parsed.get('is_urgent', False)
+            reason = parsed.get('reason', '')
+            summary = parsed.get('summary', '')
+
+            if not isinstance(is_urgent, bool):
+                raise ValueError(f"is_urgent 类型错误: {type(is_urgent)}")
+            if not reason or len(reason) < 5:
+                raise ValueError(f"reason 为空或太短: {reason}")
+            if not summary:
+                raise ValueError(f"summary 为空")
+
+            return is_urgent, reason, summary
+
+        except Exception as e:
+            print(f"  [Anthropic] 分析失败: {e}")
+            raise
+
+    def analyze_emails_batch(self, emails: List[Dict],
+                             callback=None) -> List[Dict]:
+        """
+        批量分析邮件（带并发控制）
+
+        Args:
+            emails: 邮件列表
+            callback: 每处理完一封邮件的回调函数
+
+        Returns:
+            分析后的邮件列表
+        """
+        results = []
+
+        print(f"\n🤖 Anthropic 批量分析 {len(emails)} 封邮件 (并发限制: {self.max_concurrent})...")
+
+        with ThreadPoolExecutor(max_workers=self.max_concurrent) as executor:
+            future_to_email = {}
+            for email in emails:
+                future = executor.submit(self._analyze_single_email, email)
+                future_to_email[future] = email
+
+            for i, future in enumerate(as_completed(future_to_email), 1):
+                email = future_to_email[future]
+                try:
+                    is_urgent, reason, summary = future.result()
+                    email['is_urgent'] = is_urgent
+                    email['reason'] = reason
+                    email['summary'] = summary
+                    results.append(email)
+
+                    print(f"  [{i}/{len(emails)}] {email['subject'][:30]}... - 紧急: {'是' if is_urgent else '否'}")
+
+                    if callback:
+                        callback(email, is_urgent, reason, summary)
+
+                except Exception as e:
+                    print(f"  [{i}/{len(emails)}] 分析失败: {e}")
+                    email['is_urgent'] = False
+                    email['reason'] = f"分析出错: {str(e)}"
+                    email['summary'] = "[分析失败]"
+                    results.append(email)
+
+        return results
+
+    def _analyze_single_email(self, email_data: Dict) -> Tuple[bool, str, str]:
+        """
+        分析单封邮件（内部方法，用于并发执行）
+        使用 v2 analyze_email 一次调用返回所有字段
+        """
+        return self.analyze_email(email_data)
