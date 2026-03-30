@@ -72,7 +72,8 @@ cd smart-email
 pip install -r requirements.txt
 
 # 3. 配置环境变量
-cp .env.example ~/.openclaw/.env
+# Only copy template if ~/.openclaw/.env doesn't exist
+[ -f ~/.openclaw/.env ] || cp .env.example ~/.openclaw/.env
 # 编辑 ~/.openclaw/.env
 
 # 4. 初始化
