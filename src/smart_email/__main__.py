@@ -6,19 +6,17 @@ import sys
 import json
 import argparse
 import shutil
+import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from .config import config, WORKSPACE_DIR, SKILL_DATA_DIR
+from .config import config, SKILL_DATA_DIR
 from .database import MailTracker
 from .mail_handler import EmailClient, EmailStorage
-from .ai_analyzer import AIAnalyzer
-from .anthropic_analyzer import AnthropicAnalyzer
-from .subagent_analyzer import SubagentAnalyzer
-from .analyzer_factory import create_analyzer_from_config, create_analyzer
+from .analyzer_factory import create_analyzer
 from .outbox import OutboxManager
 from .dispatcher import MessageDispatcher
-from .logger import setup_logging, restore_print
+from .logger import setup_logging
 from .get_email_by_id import get_email_by_id, format_output
 
 
@@ -573,9 +571,6 @@ def setup_cron_command(print_only: bool = False, apply: bool = False):
         return
 
     # 使用 OpenClaw cron 工具直接添加任务
-    import subprocess
-    import shutil
-
     added_jobs = []
     failed_jobs = []
 

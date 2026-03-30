@@ -3,6 +3,8 @@ AI 模块 - 紧急邮件判断和内容总结
 支持 OpenAI 兼容 API（支持任意模型提供商）
 """
 import os
+import re
+import json
 import base64
 import time
 import threading
@@ -305,31 +307,8 @@ class AIAnalyzer:
 
             result = self._call_api_with_limit(messages, max_tokens=1024)
 
-            # 解析 JSON 结果
-            import json
-            import re
-
-            # 尝试提取 JSON
-            json_match = re.search(r'\{[^{}]*\}', result, re.DOTALL)
-            if not json_match:
-                # 尝试更宽松的匹配
-                json_str = result.strip()
-                # 移除可能的 markdown 代码块
-                if json_str.startswith('```'):
-                    json_str = re.sub(r'^```json?', '', json_str)
-                    json_str = re.sub(r'```$', '', json_str)
-                json_str = json_str.strip()
-
-                try:
-                    parsed = json.loads(json_str)
-                except json.JSONDecodeError:
-                    raise ValueError(f"无法解析 LLM 返回: {result[:200]}")
-            else:
-                json_str = json_match.group()
-                try:
-                    parsed = json.loads(json_str)
-                except json.JSONDecodeError:
-                    raise ValueError(f"无法解析 LLM 返回: {result[:200]}")
+            # 解析 JSON 结果（使用改进的嵌套 JSON 提取逻辑）
+            parsed = self._extract_json_from_result(result)
 
             # 验证结果
             is_urgent = parsed.get('is_urgent', False)
@@ -348,6 +327,71 @@ class AIAnalyzer:
         except Exception as e:
             print(f"  [AI] 分析失败: {e}")
             raise
+
+    def _extract_json_from_result(self, result: str) -> dict:
+        """
+        从 LLM 返回结果中提取 JSON 对象（支持嵌套）
+
+        Args:
+            result: LLM 返回的原始字符串
+
+        Returns:
+            解析后的 JSON 字典
+
+        Raises:
+            ValueError: 无法解析 JSON 时抛出
+        """
+        # 移除可能的 markdown 代码块
+        json_str = result.strip()
+        if json_str.startswith('```'):
+            json_str = re.sub(r'^```json?', '', json_str)
+            json_str = re.sub(r'```$', '', json_str)
+        json_str = json_str.strip()
+
+        # 尝试直接解析
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError:
+            pass
+
+        # 尝试提取 JSON 对象（支持嵌套）
+        # 使用计数器来匹配嵌套的大括号
+        json_match = None
+        for i, char in enumerate(json_str):
+            if char == '{':
+                brace_count = 0
+                for j in range(i, len(json_str)):
+                    if json_str[j] == '{':
+                        brace_count += 1
+                    elif json_str[j] == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            # 找到一个完整的 JSON 对象
+                            try:
+                                candidate = json_str[i:j+1]
+                                parsed = json.loads(candidate)
+                                # 检查是否包含必需的字段
+                                if 'is_urgent' in parsed:
+                                    return parsed
+                                # 保存第一个有效的 JSON
+                                if json_match is None:
+                                    json_match = parsed
+                            except json.JSONDecodeError:
+                                pass
+                            break
+
+        if json_match is not None:
+            return json_match
+
+        # 最后的尝试：查找任何 JSON 对象模式
+        json_pattern = re.search(r'\{.*\}', json_str, re.DOTALL)
+        if json_pattern:
+            try:
+                return json.loads(json_pattern.group())
+            except json.JSONDecodeError:
+                pass
+
+        raise ValueError(f"无法解析 LLM 返回: {result[:200]}")
 
     def classify_importance(self, emails: list) -> Tuple[list, list]:
         """

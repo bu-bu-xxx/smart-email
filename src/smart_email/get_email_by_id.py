@@ -15,7 +15,7 @@ import sys
 import json
 import argparse
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, Tuple
 
 
 def parse_email_id(email_id: str) -> Tuple[str, str, str]:
@@ -50,7 +50,6 @@ def parse_email_id(email_id: str) -> Tuple[str, str, str]:
     if new_match:
         provider = new_match.group(1)
         date_compact = new_match.group(2)  # 20250321
-        time_part = new_match.group(3)     # 143022
 
         # 转换日期格式: 20250321 -> 2025-03-21
         try:
@@ -73,7 +72,6 @@ def parse_email_id(email_id: str) -> Tuple[str, str, str]:
     if old_match:
         provider = old_match.group(1)
         date_compact = old_match.group(2)  # 20250321
-        time_part = old_match.group(3)     # 143022
         suffix = old_match.group(4)        # subject_msg_id_short
 
         # 转换日期格式: 20250321 -> 2025-03-21

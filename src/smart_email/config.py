@@ -65,7 +65,9 @@ DEFAULT_CONFIG = {
         "retry_base_delay": 1.0,
         "retry_base_delay_env": "SMART_EMAIL_LLM_RETRY_BASE_DELAY",
         "llm_provider_env": "SMART_EMAIL_LLM_PROVIDER",
-        "subagent_concurrency_env": "SMART_EMAIL_SUBAGENT_CONCURRENCY"
+        "subagent_concurrency_env": "SMART_EMAIL_SUBAGENT_CONCURRENCY",
+        "subagent_timeout_env": "SMART_EMAIL_SUBAGENT_TIMEOUT",
+        "subagent_timeout_default": 120
     },
     "download": {
         "limit": 50,

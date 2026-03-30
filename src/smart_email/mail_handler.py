@@ -3,6 +3,7 @@
 """
 import os
 import re
+import json
 import imaplib
 import email
 from email import policy
@@ -95,14 +96,19 @@ class EmailClient:
             print(f"    [IMAP ID] 发送失败（可能服务器不支持）: {e}")
     
     def disconnect(self):
-        """断开连接"""
+        """断开连接，使用 try-finally 确保 logout() 总是执行"""
         if self.conn:
             try:
-                self.conn.close()
-                self.conn.logout()
+                try:
+                    self.conn.close()
+                except Exception:
+                    pass
+                finally:
+                    self.conn.logout()
             except Exception:
                 pass
-            self.conn = None
+            finally:
+                self.conn = None
     
     def fetch_new_emails(self, limit: int = 50) -> List[Dict]:
         """获取新邮件"""
@@ -177,6 +183,8 @@ class EmailClient:
         # 提取附件信息
         attachments = self._extract_attachments(msg)
         
+        # 注意：不保存 raw_email 完整内容，避免大附件导致内存溢出
+        # 邮件正文和附件信息已提取，原始邮件不再保留在内存中
         return {
             'uid': msg_id.decode(),
             'message_id': message_id.strip('<>') if message_id else None,
@@ -188,7 +196,6 @@ class EmailClient:
             'body_html': body_html,
             'is_flagged_urgent': is_flagged_urgent,
             'attachments': attachments,
-            'raw_email': raw_email,
             'headers': dict(msg.items())
         }
     
@@ -340,10 +347,16 @@ class EmailStorage:
         email_dir = date_dir / folder_name
         email_dir.mkdir(parents=True, exist_ok=True)
         
-        # 保存原始 .eml
+        # 保存原始 .eml（如 raw_email 不存在则创建空文件）
+        # 注意：raw_email 不再存储在内存中，避免大附件导致内存溢出
         eml_path = email_dir / 'email.eml'
-        with open(eml_path, 'wb') as f:
-            f.write(email_data.get('raw_email', b''))
+        raw_email = email_data.get('raw_email')
+        if raw_email:
+            with open(eml_path, 'wb') as f:
+                f.write(raw_email)
+        else:
+            # 创建空的 .eml 文件作为占位（或根据需要从其他来源重建）
+            eml_path.touch()
         
         # 保存 Markdown
         md_path = email_dir / 'email.md'
@@ -380,7 +393,6 @@ class EmailStorage:
         # 保存附件信息到 JSON 文件（供多模态分析使用）
         attachments_json_path = email_dir / 'attachments.json'
         try:
-            import json
             with open(attachments_json_path, 'w', encoding='utf-8') as f:
                 json.dump(saved_attachments, f, ensure_ascii=False, indent=2)
         except Exception as e:

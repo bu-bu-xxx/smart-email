@@ -33,7 +33,8 @@ def create_analyzer(provider: str = "openai",
                     max_concurrent: int = 5,
                     multimodal_analysis: bool = False,
                     retry_count: int = 3,
-                    retry_base_delay: float = 1.0) -> BaseAnalyzer:
+                    retry_base_delay: float = 1.0,
+                    timeout: int = None) -> BaseAnalyzer:
     """
     根据配置创建对应的 Analyzer 实例
 
@@ -49,6 +50,7 @@ def create_analyzer(provider: str = "openai",
         multimodal_analysis: 是否启用多模态分析
         retry_count: 重试次数
         retry_base_delay: 重试基础延迟
+        timeout: Subagent 超时时间（秒），默认从 SMART_EMAIL_SUBAGENT_TIMEOUT 读取
 
     Returns:
         Analyzer 实例
@@ -89,7 +91,8 @@ def create_analyzer(provider: str = "openai",
         return SubagentAnalyzer(
             max_concurrent=max_concurrent,
             retry_count=retry_count,
-            retry_base_delay=retry_base_delay
+            retry_base_delay=retry_base_delay,
+            timeout=timeout
         )
 
     else:
@@ -199,11 +202,21 @@ def create_analyzer_from_config(config) -> Optional[BaseAnalyzer]:
             except ValueError:
                 pass
 
+        # 读取 Subagent 超时配置
+        timeout_str = os.getenv("SMART_EMAIL_SUBAGENT_TIMEOUT")
+        timeout = None
+        if timeout_str:
+            try:
+                timeout = int(timeout_str)
+            except ValueError:
+                pass
+
         return create_analyzer(
             provider="subagent",
             max_concurrent=max_concurrent,
             retry_count=retry_count,
-            retry_base_delay=retry_base_delay
+            retry_base_delay=retry_base_delay,
+            timeout=timeout
         )
 
     else:

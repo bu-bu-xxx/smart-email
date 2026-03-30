@@ -479,13 +479,20 @@ _Provided by smart-email skill_"""
         today_sent_dir = self.sent_dir / today_str
         today_sent_dir.mkdir(parents=True, exist_ok=True)
         
-        # 移动文件
+        # 使用原子操作移动文件
         sent_path = today_sent_dir / f"{message_id}.json"
         try:
-            pending_path.rename(sent_path)
+            # 优先使用 os.rename（原子操作）
+            import os
+            os.rename(pending_path, sent_path)
             return True
-        except Exception:
-            return False
+        except OSError:
+            # 跨文件系统时回退到 Path.rename
+            try:
+                pending_path.rename(sent_path)
+                return True
+            except Exception:
+                return False
     
     def delete_message(self, message_id: str) -> bool:
         """删除消息"""

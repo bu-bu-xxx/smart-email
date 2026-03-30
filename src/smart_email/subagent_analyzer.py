@@ -5,12 +5,18 @@ Subagent 分析器 - 使用 OpenClaw Subagent 进行邮件分析
 import os
 import json
 import time
-import shutil
 import threading
 import fcntl
 from typing import Dict, Tuple, List, Optional, Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+
+# 延迟导入，避免循环依赖
+try:
+    from openclaw import sessions_spawn
+    HAS_OPENCLAW = True
+except ImportError:
+    HAS_OPENCLAW = False
 
 
 class SubagentAnalyzer:
@@ -29,7 +35,8 @@ class SubagentAnalyzer:
     def __init__(self,
                  max_concurrent: int = 3,
                  retry_count: int = 3,
-                 retry_base_delay: float = 1.0):
+                 retry_base_delay: float = 1.0,
+                 timeout: int = None):
         """
         初始化 Subagent 分析器
 
@@ -37,10 +44,21 @@ class SubagentAnalyzer:
             max_concurrent: 每批并发数量（SMART_EMAIL_SUBAGENT_CONCURRENCY）
             retry_count: 重试次数
             retry_base_delay: 重试基础延迟（秒）
+            timeout: 超时时间（秒），默认从 SMART_EMAIL_SUBAGENT_TIMEOUT 读取
         """
         self.max_concurrent = max_concurrent
         self.retry_count = retry_count
         self.retry_base_delay = retry_base_delay
+
+        # 从环境变量读取超时时间，默认 120 秒
+        if timeout is None:
+            timeout_str = os.getenv("SMART_EMAIL_SUBAGENT_TIMEOUT", "120")
+            try:
+                self.timeout = int(timeout_str)
+            except ValueError:
+                self.timeout = 120
+        else:
+            self.timeout = timeout
 
         # 临时文件目录
         self._emails_dir = Path("/tmp/smart-email/emails")
@@ -68,18 +86,20 @@ class SubagentAnalyzer:
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
         return email_file
 
-    def _wait_for_result(self, email_id: str, timeout: float = 120.0) -> Optional[Dict]:
+    def _wait_for_result(self, email_id: str, timeout: float = None) -> Optional[Dict]:
         """
         等待 subagent 完成分析，读取结果
         使用文件锁保护并发读取
 
         Args:
             email_id: 邮件ID
-            timeout: 超时时间（秒）
+            timeout: 超时时间（秒），默认使用 self.timeout
 
         Returns:
             分析结果字典，超时返回 None
         """
+        if timeout is None:
+            timeout = self.timeout
         result_file = self._results_dir / f"{email_id}.json"
         start_time = time.time()
 
@@ -183,17 +203,18 @@ class SubagentAnalyzer:
         for attempt in range(self.retry_count):
             try:
                 # 使用 sessions_spawn 触发 subagent 分析
-                from openclaw import sessions_spawn
+                if not HAS_OPENCLAW:
+                    raise ImportError("未安装 openclaw 包")
 
                 result = sessions_spawn(
                     runtime="subagent",
                     mode="run",
                     message=prompt,
-                    timeout_seconds=120
+                    timeout_seconds=self.timeout
                 )
 
-                # 等待结果文件
-                analysis_result = self._wait_for_result(email_id, timeout=60)
+                # 等待结果文件（使用相同的超时时间）
+                analysis_result = self._wait_for_result(email_id)
 
                 if analysis_result is None:
                     raise TimeoutError(f"等待 subagent 结果超时: {email_id}")

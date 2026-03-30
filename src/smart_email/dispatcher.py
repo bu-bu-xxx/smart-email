@@ -1,10 +1,12 @@
 """
 消息分发模块 - 将 outbox 中的消息发送到用户指定渠道
 """
+import os
 import json
+import subprocess
 import shutil
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict
 from datetime import datetime
 
 from . import config
@@ -154,9 +156,6 @@ class MessageDispatcher:
             bool: 是否发送成功
         """
         try:
-            import subprocess
-            import shutil
-            
             # 查找 openclaw 命令
             openclaw_cmd = shutil.which("openclaw")
             if not openclaw_cmd:
@@ -198,15 +197,20 @@ class MessageDispatcher:
             return False
     
     def _move_to_sent(self, msg_file: Path, message: Dict):
-        """将消息移动到已发送目录"""
+        """将消息移动到已发送目录（使用原子操作）"""
         # 创建日期子目录
         today = datetime.now().strftime("%Y-%m-%d")
         sent_today_dir = self.sent_dir / today
         sent_today_dir.mkdir(parents=True, exist_ok=True)
         
-        # 移动文件
+        # 使用原子操作移动文件（os.rename 在 POSIX 上是原子的）
         dest_file = sent_today_dir / msg_file.name
-        shutil.move(str(msg_file), str(dest_file))
+        try:
+            # 优先使用 os.rename（原子操作）
+            os.rename(msg_file, dest_file)
+        except OSError:
+            # 跨文件系统时回退到 shutil.move
+            shutil.move(str(msg_file), str(dest_file))
         
         logger.debug(f"消息已归档: {dest_file}")
     

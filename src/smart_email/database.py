@@ -21,7 +21,7 @@ class MailTracker:
     def _init_db(self):
         """初始化数据库"""
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30.0) as conn:
             cursor = conn.cursor()
             
             # 邮件记录表 (v2 重构)
@@ -129,7 +129,7 @@ class MailTracker:
     
     def is_email_exists(self, provider: str, email_account: str, uid: str, message_id: str = None) -> bool:
         """检查邮件是否已存在"""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30.0) as conn:
             cursor = conn.cursor()
             
             if message_id:
@@ -152,7 +152,7 @@ class MailTracker:
                   sender: str = None, received_at: str = None,
                   local_path: str = None) -> int:
         """添加邮件记录（默认 is_analyzed=0, retry_count=0）"""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30.0) as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 INSERT OR IGNORE INTO emails 
@@ -165,7 +165,7 @@ class MailTracker:
     
     def get_email_by_id(self, email_id: int) -> dict:
         """根据 ID 获取邮件"""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30.0) as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT * FROM emails WHERE id = ?', (email_id,))
             row = cursor.fetchone()
@@ -177,7 +177,7 @@ class MailTracker:
     def log_telegram_message(self, msg_type: str, chat_id: str, message: str,
                             related_emails: list = None, mail_count: int = 0):
         """记录 Telegram 消息发送"""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30.0) as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 INSERT INTO telegram_logs (type, chat_id, message, related_emails, mail_count)
@@ -189,7 +189,7 @@ class MailTracker:
     
     def get_stats(self) -> dict:
         """获取统计信息（v2 适配）"""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30.0) as conn:
             cursor = conn.cursor()
             
             # 总邮件数
@@ -227,7 +227,7 @@ class MailTracker:
     
     def update_email_analysis(self, email_id: int, is_urgent: bool = False):
         """更新邮件分析结果（标记为已分析）v1兼容方法"""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30.0) as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 UPDATE emails 
@@ -250,7 +250,7 @@ class MailTracker:
         Returns:
             邮件记录列表
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30.0) as conn:
             cursor = conn.cursor()
 
             if since:
@@ -282,7 +282,7 @@ class MailTracker:
         Returns:
             邮件记录列表
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30.0) as conn:
             cursor = conn.cursor()
 
             if since:
@@ -312,7 +312,7 @@ class MailTracker:
             reason: AI 判断理由
             summary: AI 摘要
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30.0) as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 UPDATE emails 
@@ -330,7 +330,7 @@ class MailTracker:
             email_id: 邮件记录ID
             last_error: 最近一次错误信息
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30.0) as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 UPDATE emails 
@@ -348,7 +348,7 @@ class MailTracker:
             email_id: 邮件记录ID
             last_error: 最后一次错误信息
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30.0) as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 UPDATE emails 
@@ -359,7 +359,7 @@ class MailTracker:
     
     def get_email_by_local_path(self, local_path: str) -> dict:
         """根据本地路径获取邮件记录"""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30.0) as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT * FROM emails WHERE local_path = ?', (local_path,))
             row = cursor.fetchone()
