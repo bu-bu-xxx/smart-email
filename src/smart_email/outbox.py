@@ -162,7 +162,10 @@ class OutboxManager:
 
 📝 摘要：{summary}
 
-<!-- email_id: {email_id} -->"""
+<!-- email_id: {email_id} -->
+
+---
+_Provided by smart-email skill_"""
 
         context = {
             "related_emails": [email_id],
@@ -284,6 +287,10 @@ class OutboxManager:
         if email_id_list:
             body_lines.append(f"<!-- email_ids: {', '.join(email_id_list)} -->")
 
+        body_lines.append("")
+        body_lines.append("---")
+        body_lines.append("_Provided by smart-email skill_")
+
         body = "\n".join(body_lines)
 
         # 构建邮件ID列表，包含更多信息
@@ -344,13 +351,16 @@ class OutboxManager:
             # 单条错误
             error = errors[0]
             provider_name = provider_map.get(error.get('provider'), error.get('provider', '未知'))
-            body = f"{provider_name}: {error.get('error', '未知错误')}"
+            body = f"{provider_name}: {error.get('error', '未知错误')}\n\n---\n_Provided by smart-email skill_"
         else:
             # 多条错误聚合
             body_lines = ["以下邮箱连接失败："]
             for error in errors:
                 provider_name = provider_map.get(error.get('provider'), error.get('provider', '未知'))
                 body_lines.append(f"• {provider_name}: {error.get('error', '未知错误')}")
+            body_lines.append("")
+            body_lines.append("---")
+            body_lines.append("_Provided by smart-email skill_")
             body = "\n".join(body_lines)
         
         context = {
@@ -406,7 +416,10 @@ class OutboxManager:
 
 重试次数: {retry_count}/3
 
-错误原因: {last_error}"""
+错误原因: {last_error}
+
+---
+_Provided by smart-email skill_"""
 
         context = {
             "email_id": email_id,
