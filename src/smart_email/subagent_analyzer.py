@@ -7,6 +7,7 @@ import json
 import time
 import shutil
 import threading
+import fcntl
 from typing import Dict, Tuple, List, Optional, Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -55,15 +56,22 @@ class SubagentAnalyzer:
     def _write_email_for_subagent(self, email_data: Dict, email_id: str) -> Path:
         """
         将邮件数据写入临时文件，供 subagent 读取
+        使用文件锁保护并发访问
         """
         email_file = self._emails_dir / f"{email_id}.json"
         with open(email_file, 'w', encoding='utf-8') as f:
-            json.dump(email_data, f, ensure_ascii=False, indent=2)
+            # 获取独占锁（写入保护）
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            try:
+                json.dump(email_data, f, ensure_ascii=False, indent=2)
+            finally:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
         return email_file
 
     def _wait_for_result(self, email_id: str, timeout: float = 120.0) -> Optional[Dict]:
         """
         等待 subagent 完成分析，读取结果
+        使用文件锁保护并发读取
 
         Args:
             email_id: 邮件ID
@@ -79,8 +87,13 @@ class SubagentAnalyzer:
             if result_file.exists():
                 try:
                     with open(result_file, 'r', encoding='utf-8') as f:
-                        result = json.load(f)
-                    return result
+                        # 获取共享锁（读取保护）
+                        fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+                        try:
+                            result = json.load(f)
+                            return result
+                        finally:
+                            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
                 except Exception as e:
                     print(f"  [Subagent] 读取结果失败: {e}")
                     time.sleep(0.5)
@@ -91,19 +104,34 @@ class SubagentAnalyzer:
     def _cleanup_files(self, email_id: str):
         """
         清理临时文件
+        使用文件锁保护并发删除
         """
         email_file = self._emails_dir / f"{email_id}.json"
         result_file = self._results_dir / f"{email_id}.json"
 
         try:
             if email_file.exists():
+                # 获取独占锁确保没有进程正在写入/读取
+                with open(email_file, 'r', encoding='utf-8') as f:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
                 email_file.unlink()
+        except (IOError, OSError):
+            # 文件被占用，跳过删除
+            pass
         except Exception as e:
             print(f"  [Subagent] 清理邮件文件失败: {e}")
 
         try:
             if result_file.exists():
+                # 获取独占锁确保没有进程正在写入/读取
+                with open(result_file, 'r', encoding='utf-8') as f:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
                 result_file.unlink()
+        except (IOError, OSError):
+            # 文件被占用，跳过删除
+            pass
         except Exception as e:
             print(f"  [Subagent] 清理结果文件失败: {e}")
 

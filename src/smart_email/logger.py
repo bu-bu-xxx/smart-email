@@ -82,10 +82,10 @@ def setup_logging(command_name: str, log_dir: Path = None, auto_redirect_print: 
     # 清理旧日志
     clean_old_logs(log_dir, days=30)
     
-    logger.info(f"='='*50")
+    logger.info("=" * 50)
     logger.info(f"日志系统初始化完成: {command_name}")
     logger.info(f"日志文件: {log_file}")
-    logger.info(f"='='*50")
+    logger.info("=" * 50)
     
     return logger
 

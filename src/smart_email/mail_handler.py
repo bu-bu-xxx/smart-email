@@ -100,7 +100,7 @@ class EmailClient:
             try:
                 self.conn.close()
                 self.conn.logout()
-            except:
+            except Exception:
                 pass
             self.conn = None
     
@@ -204,7 +204,7 @@ class EmailClient:
             if isinstance(part, bytes):
                 try:
                     result.append(part.decode(charset or 'utf-8', errors='replace'))
-                except:
+                except Exception:
                     result.append(part.decode('utf-8', errors='replace'))
             else:
                 result.append(part)
@@ -217,7 +217,7 @@ class EmailClient:
             from email.utils import parsedate_to_datetime
             dt = parsedate_to_datetime(date_str)
             return dt.isoformat()
-        except:
+        except Exception:
             return datetime.now().isoformat()
     
     def _extract_body(self, msg) -> Tuple[str, str]:
@@ -244,7 +244,7 @@ class EmailClient:
                             text_content.append(content)
                         elif content_type == 'text/html':
                             html_content.append(content)
-                except:
+                except Exception:
                     continue
         else:
             try:
@@ -257,7 +257,7 @@ class EmailClient:
                         text_content.append(content)
                     elif msg.get_content_type() == 'text/html':
                         html_content.append(content)
-            except:
+            except Exception:
                 pass
         
         return '\n'.join(text_content), '\n'.join(html_content)
@@ -326,7 +326,7 @@ class EmailStorage:
             # received_at 是 ISO 格式字符串，如 "2026-03-10T08:30:00+00:00"
             dt = datetime.fromisoformat(received_at.replace('Z', '+00:00'))
             mail_date = dt.strftime('%Y-%m-%d')
-        except:
+        except Exception:
             mail_date = datetime.now().strftime('%Y-%m-%d')  # 兜底
         
         date_dir = self.base_path / mail_date

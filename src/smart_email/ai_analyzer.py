@@ -322,13 +322,13 @@ class AIAnalyzer:
 
                 try:
                     parsed = json.loads(json_str)
-                except:
+                except json.JSONDecodeError:
                     raise ValueError(f"无法解析 LLM 返回: {result[:200]}")
             else:
                 json_str = json_match.group()
                 try:
                     parsed = json.loads(json_str)
-                except:
+                except json.JSONDecodeError:
                     raise ValueError(f"无法解析 LLM 返回: {result[:200]}")
 
             # 验证结果

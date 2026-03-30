@@ -58,7 +58,7 @@ def parse_email_id(email_id: str) -> Tuple[str, str, str]:
             month = date_compact[4:6]
             day = date_compact[6:8]
             date_str = f"{year}-{month}-{day}"
-        except:
+        except (IndexError, ValueError):
             raise ValueError(f"日期格式错误: {date_compact}")
 
         return provider, date_str, email_id
@@ -82,7 +82,7 @@ def parse_email_id(email_id: str) -> Tuple[str, str, str]:
             month = date_compact[4:6]
             day = date_compact[6:8]
             date_str = f"{year}-{month}-{day}"
-        except:
+        except (IndexError, ValueError):
             raise ValueError(f"日期格式错误: {date_compact}")
 
         return provider, date_str, email_id

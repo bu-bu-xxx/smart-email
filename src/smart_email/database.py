@@ -85,6 +85,10 @@ class MailTracker:
                 cursor.execute(f'ALTER TABLE emails ADD COLUMN {field} {field_type}')
                 print(f"  [迁移] 添加字段: {field}")
         
+        # 重新获取 columns 集合（添加新字段后）
+        cursor.execute("PRAGMA table_info(emails)")
+        columns = {row[1] for row in cursor.fetchall()}
+        
         # 为兼容旧 skill（smart-email）而保留的字段
         # 虽然逻辑上已废除，但旧代码仍依赖这些列
         legacy_fields = {
@@ -96,6 +100,10 @@ class MailTracker:
             if field not in columns:
                 cursor.execute(f'ALTER TABLE emails ADD COLUMN {field} {field_type}')
                 print(f"  [迁移] 添加兼容字段: {field}")
+        
+        # 重新获取 columns 集合（添加兼容字段后）
+        cursor.execute("PRAGMA table_info(emails)")
+        columns = {row[1] for row in cursor.fetchall()}
         
         # 迁移 is_urgent 数据到 reason 字段（仅当 is_urgent 列存在时）
         # 注意：is_urgent 已废除，但 reason 字段用于存放判断理由

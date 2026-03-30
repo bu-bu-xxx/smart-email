@@ -136,7 +136,7 @@ class OutboxManager:
         try:
             dt = datetime.fromisoformat(received_at)
             time_str = dt.strftime('%m-%d %H:%M')
-        except:
+        except (ValueError, TypeError):
             time_str = received_at
 
         # 提取邮件ID
@@ -237,7 +237,7 @@ _Provided by smart-email skill_"""
                 try:
                     dt = datetime.fromisoformat(received_at)
                     time_str = dt.strftime('%m-%d %H:%M')
-                except:
+                except (ValueError, TypeError):
                     time_str = ''
                 
                 # 美观化方案C：📧 [时间] 发件人，内容缩进
@@ -270,7 +270,7 @@ _Provided by smart-email skill_"""
                 try:
                     dt = datetime.fromisoformat(received_at)
                     time_str = dt.strftime('%m-%d %H:%M')
-                except:
+                except (ValueError, TypeError):
                     time_str = ''
                 
                 # 美观化方案C：📧 [时间] 发件人，内容缩进

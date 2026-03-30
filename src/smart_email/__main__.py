@@ -226,7 +226,7 @@ def check_command(test_mode: bool = False, since: str = None):
                         email_dt = datetime.fromisoformat(email_data.get('received_at', ''))
                         if email_dt >= since_dt:
                             filtered_emails.append(email_data)
-                    except:
+                    except Exception:
                         filtered_emails.append(email_data)
                 emails = filtered_emails
                 print(f"    时间过滤后: {len(emails)} 封")
@@ -366,11 +366,11 @@ def check_command(test_mode: bool = False, since: str = None):
                             images = []
                             attachments = []
                             for att in email_data.get('saved_attachments', []):
-                                rel_path = att.get('relative_path', '')
+                                local_path = att.get('local_path', '')
                                 if att.get('is_inline') and att.get('content_type', '').startswith('image/'):
-                                    images.append(rel_path)
+                                    images.append(local_path)
                                 else:
-                                    attachments.append(rel_path)
+                                    attachments.append(local_path)
                             
                             msg_id = outbox.write_urgent_message(
                                 email_data=email_data,
@@ -749,7 +749,7 @@ def download_command(test_mode: bool = False, since: str = None, limit: int = 10
                         email_dt = datetime.fromisoformat(email_data.get('received_at', ''))
                         if email_dt >= since_dt:
                             filtered_emails.append(email_data)
-                    except:
+                    except Exception:
                         filtered_emails.append(email_data)
                 emails = filtered_emails
                 print(f"  时间过滤后: {len(emails)} 封邮件")
@@ -924,11 +924,11 @@ def analyze_command(test_mode: bool = False, since: str = None, limit: int = Non
             images = []
             attachments = []
             for att in email_data.get('saved_attachments', []):
-                rel_path = att.get('relative_path', '')
+                local_path = att.get('local_path', '')
                 if att.get('is_inline') and att.get('content_type', '').startswith('image/'):
-                    images.append(rel_path)
+                    images.append(local_path)
                 else:
-                    attachments.append(rel_path)
+                    attachments.append(local_path)
             
             email_data['summary'] = summary
             msg_id = outbox.write_urgent_message(
