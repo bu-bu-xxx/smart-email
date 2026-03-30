@@ -96,19 +96,17 @@ class EmailClient:
             print(f"    [IMAP ID] 发送失败（可能服务器不支持）: {e}")
     
     def disconnect(self):
-        """断开连接，使用 try-finally 确保 logout() 总是执行"""
+        """断开连接，close() 出错不阻止 logout()，最后 conn=None"""
         if self.conn:
             try:
-                try:
-                    self.conn.close()
-                except Exception:
-                    pass
-                finally:
-                    self.conn.logout()
+                self.conn.close()
             except Exception:
                 pass
-            finally:
-                self.conn = None
+            try:
+                self.conn.logout()
+            except Exception:
+                pass
+            self.conn = None
     
     def fetch_new_emails(self, limit: int = 50) -> List[Dict]:
         """获取新邮件"""
@@ -269,8 +267,18 @@ class EmailClient:
         
         return '\n'.join(text_content), '\n'.join(html_content)
     
-    def _extract_attachments(self, msg) -> List[Dict]:
-        """提取附件信息"""
+    def _extract_attachments(self, msg, email_dir: Optional[Path] = None) -> List[Dict]:
+        """提取附件信息
+        
+        Args:
+            msg: 邮件消息对象
+            email_dir: 邮件存储目录，如果提供则直接写入附件文件
+        
+        Returns:
+            附件信息列表，包含 filename, content_type, size, local_path/is_inline 等字段
+            - 当 email_dir 不为空时，返回的附件包含 local_path 字段，不含 content 字段
+            - 当 email_dir 为空时，返回的附件包含 content 字段（向后兼容）
+        """
         attachments = []
         
         if msg.is_multipart():
@@ -284,13 +292,32 @@ class EmailClient:
                     if filename:
                         filename = self._decode_header(filename)
                         payload = part.get_payload(decode=True) or b''
-                        attachments.append({
+                        attachment_info = {
                             'filename': filename,
                             'content_type': content_type,
                             'size': len(payload),
-                            'content': payload,
                             'is_inline': False
-                        })
+                        }
+                        
+                        if email_dir:
+                            # 直接写入文件
+                            attachments_dir = email_dir / 'attachments'
+                            attachments_dir.mkdir(exist_ok=True)
+                            safe_filename = re.sub(r'[\\/:*?"<>|]', '_', filename)
+                            file_path = attachments_dir / safe_filename
+                            try:
+                                with open(file_path, 'wb') as f:
+                                    f.write(payload)
+                                attachment_info['local_path'] = str(file_path)
+                                print(f"    保存附件: {filename} ({len(payload)} bytes)")
+                            except Exception as e:
+                                print(f"    保存附件失败 {filename}: {e}")
+                        else:
+                            # 向后兼容：返回 content
+                            attachment_info['content'] = payload
+                        
+                        attachments.append(attachment_info)
+                
                 # 处理内嵌图片 (Content-Disposition: inline 或没有 disposition 的图片)
                 elif content_type.startswith('image/') and 'attachment' not in content_disposition:
                     # 尝试获取内嵌图片的文件名
@@ -307,14 +334,32 @@ class EmailClient:
                         filename = self._decode_header(filename)
                     
                     payload = part.get_payload(decode=True) or b''
-                    attachments.append({
+                    attachment_info = {
                         'filename': filename,
                         'content_type': content_type,
                         'size': len(payload),
-                        'content': payload,
                         'is_inline': True,
                         'content_id': part.get('Content-ID', '').strip('<>')
-                    })
+                    }
+                    
+                    if email_dir:
+                        # 直接写入文件
+                        attachments_dir = email_dir / 'attachments'
+                        attachments_dir.mkdir(exist_ok=True)
+                        safe_filename = re.sub(r'[\\/:*?"<>|]', '_', filename)
+                        file_path = attachments_dir / safe_filename
+                        try:
+                            with open(file_path, 'wb') as f:
+                                f.write(payload)
+                            attachment_info['local_path'] = str(file_path)
+                            print(f"    保存内嵌图片: {filename} ({len(payload)} bytes)")
+                        except Exception as e:
+                            print(f"    保存内嵌图片失败 {filename}: {e}")
+                    else:
+                        # 向后兼容：返回 content
+                        attachment_info['content'] = payload
+                    
+                    attachments.append(attachment_info)
         
         return attachments
 
@@ -369,23 +414,34 @@ class EmailStorage:
         
         for attachment in email_data.get('attachments', []):
             filename = attachment['filename']
-            # 清理文件名中的非法字符
-            safe_filename = re.sub(r'[\\/:*?"<>|]', '_', filename)
-            file_path = attachments_dir / safe_filename
             
-            try:
-                with open(file_path, 'wb') as f:
-                    f.write(attachment.get('content', b''))
+            # 如果附件已有 local_path，说明已在提取时写入文件
+            if 'local_path' in attachment:
                 saved_attachments.append({
                     'filename': filename,
-                    'local_path': str(file_path),
+                    'local_path': attachment['local_path'],
                     'content_type': attachment.get('content_type', 'application/octet-stream'),
                     'size': attachment.get('size', 0),
                     'is_inline': attachment.get('is_inline', False)
                 })
-                print(f"    保存附件: {filename} ({attachment.get('size', 0)} bytes)")
-            except Exception as e:
-                print(f"    保存附件失败 {filename}: {e}")
+            else:
+                # 向后兼容：从 content 字段写入文件
+                safe_filename = re.sub(r'[\\/:*?"<>|]', '_', filename)
+                file_path = attachments_dir / safe_filename
+                
+                try:
+                    with open(file_path, 'wb') as f:
+                        f.write(attachment.get('content', b''))
+                    saved_attachments.append({
+                        'filename': filename,
+                        'local_path': str(file_path),
+                        'content_type': attachment.get('content_type', 'application/octet-stream'),
+                        'size': attachment.get('size', 0),
+                        'is_inline': attachment.get('is_inline', False)
+                    })
+                    print(f"    保存附件: {filename} ({attachment.get('size', 0)} bytes)")
+                except Exception as e:
+                    print(f"    保存附件失败 {filename}: {e}")
         
         # 更新 email_data 中的附件信息为保存后的路径
         email_data['saved_attachments'] = saved_attachments
@@ -397,6 +453,11 @@ class EmailStorage:
                 json.dump(saved_attachments, f, ensure_ascii=False, indent=2)
         except Exception as e:
             print(f"    保存附件信息失败: {e}")
+
+        # 清理内存：删除附件的 content 字段以释放大附件占用的内存
+        for attachment in email_data.get('attachments', []):
+            if 'content' in attachment:
+                del attachment['content']
 
         return str(email_dir)
     

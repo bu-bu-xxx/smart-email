@@ -317,7 +317,6 @@ def check_command(test_mode: bool = False, since: str = None):
                     # 读取附件信息（用于多模态分析）
                     saved_attachments = []
                     if attachments_json.exists():
-                        import json
                         with open(attachments_json, 'r', encoding='utf-8') as f:
                             saved_attachments = json.load(f)
 
@@ -880,7 +879,6 @@ def analyze_command(test_mode: bool = False, since: str = None, limit: int = Non
             # 读取附件信息（用于多模态分析）
             saved_attachments = []
             if attachments_json.exists():
-                import json
                 with open(attachments_json, 'r', encoding='utf-8') as f:
                     saved_attachments = json.load(f)
 

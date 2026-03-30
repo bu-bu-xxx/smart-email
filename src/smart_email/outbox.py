@@ -2,6 +2,7 @@
 Outbox 消息队列模块 - 生成和管理待发送消息
 """
 import json
+import os
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -483,7 +484,6 @@ _Provided by smart-email skill_"""
         sent_path = today_sent_dir / f"{message_id}.json"
         try:
             # 优先使用 os.rename（原子操作）
-            import os
             os.rename(pending_path, sent_path)
             return True
         except OSError:
