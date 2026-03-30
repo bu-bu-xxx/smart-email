@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "smart-email"
-version = "2.4"
+version = "2.5"
 description = "AI智能邮件管理助手，支持多邮箱 IMAP 收取、本地归档、AI智能判断紧急邮件、定时汇总推送"
 readme = "README.md"
 requires-python = ">=3.8"
