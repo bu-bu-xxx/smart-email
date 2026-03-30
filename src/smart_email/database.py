@@ -231,9 +231,9 @@ class MailTracker:
             cursor = conn.cursor()
             cursor.execute('''
                 UPDATE emails 
-                SET is_analyzed = 1
+                SET is_analyzed = 1, is_urgent = ?
                 WHERE id = ?
-            ''', (email_id,))
+            ''', (1 if is_urgent else 0, email_id))
             conn.commit()
     
     # ========== v2 新方法 ==========

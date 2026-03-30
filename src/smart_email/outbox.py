@@ -511,9 +511,10 @@ _Provided by smart-email skill_"""
         
         # 计算已发送消息数（所有日期子目录）
         sent_count = 0
-        for date_dir in self.sent_dir.iterdir():
-            if date_dir.is_dir():
-                sent_count += len(list(date_dir.glob("*.json")))
+        if self.sent_dir.exists():
+            for date_dir in self.sent_dir.iterdir():
+                if date_dir.is_dir():
+                    sent_count += len(list(date_dir.glob("*.json")))
         
         return {
             "pending": pending_count,
