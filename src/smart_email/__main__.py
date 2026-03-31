@@ -95,8 +95,8 @@ def parse_since(since_str: str) -> datetime:
     except ValueError:
         pass
     
-    print(f"警告: 无法解析时间格式 '{since_str}'，使用默认24小时")
-    return datetime.now() - timedelta(days=1)
+    print(f"警告: 无法解析时间格式 '{since_str}'，使用默认72小时")
+    return datetime.now() - timedelta(hours=72)
 
 
 def check_command(test_mode: bool = False, since: str = None):
@@ -285,10 +285,10 @@ def check_command(test_mode: bool = False, since: str = None):
         print("\n【阶段2】跳过AI分析（未配置API Key）")
     else:
         analyze_limit = ai_config.get('analyze_limit', 20)
-        # 只分析最近24小时内接收的邮件（与digest保持一致）
-        since_dt = datetime.now() - timedelta(hours=24)
+        # 只分析最近72小时内接收的邮件（与digest保持一致）
+        since_dt = datetime.now() - timedelta(hours=72)
         since_str = since_dt.isoformat()
-        print(f"\n【阶段2】AI分析最近24小时内最早的 {analyze_limit} 封未分析邮件...")
+        print(f"\n【阶段2】AI分析最近72小时内最早的 {analyze_limit} 封未分析邮件...")
 
         # 从数据库获取最早的待分析邮件（is_analyzed=0 且 retry_count<3）
         pending_emails = tracker.get_pending_analysis_emails(limit=analyze_limit, since=since_str)
@@ -449,8 +449,8 @@ def digest_command(test_mode: bool = False):
     
     outbox = OutboxManager(SKILL_DATA_DIR, test_mode=test_mode)
     
-    # 只处理最近24小时内的已分析邮件
-    since = (datetime.now() - timedelta(hours=24)).isoformat()
+    # 只处理最近72小时内的已分析邮件
+    since = (datetime.now() - timedelta(hours=72)).isoformat()
     analyzed_emails = tracker.get_analyzed_emails(since)
     
     if not analyzed_emails:
@@ -460,22 +460,22 @@ def digest_command(test_mode: bool = False):
     print(f"找到 {len(analyzed_emails)} 封已分析邮件")
     
     # ========== 过滤已通知的邮件 ==========
-    # 读取 outbox/sent/{date}/ 下已有 digest 的 email_ids
-    today_str = datetime.now().strftime('%Y-%m-%d')
+    # 读取72小时内所有日期目录的已发送digest，防止重复通知
     notified_email_ids = set()
-    
-    sent_dir = outbox.sent_dir / today_str
-    if sent_dir.exists():
-        for digest_file in sent_dir.glob("digest_*.json"):
-            try:
-                with open(digest_file, 'r', encoding='utf-8') as f:
-                    digest_msg = json.load(f)
-                    # 从 context.email_ids 中提取已包含的邮件ID
-                    context = digest_msg.get('context', {})
-                    email_ids = context.get('email_ids', [])
-                    notified_email_ids.update(email_ids)
-            except Exception as e:
-                print(f"  警告: 读取已发送digest失败 {digest_file}: {e}")
+    for i in range(3):  # 72小时 = 3天
+        check_date = (datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d')
+        sent_dir = outbox.sent_dir / check_date
+        if sent_dir.exists():
+            for digest_file in sent_dir.glob("digest_*.json"):
+                try:
+                    with open(digest_file, 'r', encoding='utf-8') as f:
+                        digest_msg = json.load(f)
+                        # 从 context.related_emails 中提取已包含的邮件ID
+                        context = digest_msg.get('context', {})
+                        email_ids = context.get('related_emails', [])
+                        notified_email_ids.update(email_ids)
+                except Exception as e:
+                    print(f"  警告: 读取已发送digest失败 {digest_file}: {e}")
     
     # 过滤掉已通知的邮件
     new_emails = []
@@ -849,11 +849,11 @@ def analyze_command(test_mode: bool = False, since: str = None, limit: int = Non
     # 使用 analyze_limit 或传入的 limit
     analyze_limit = limit or ai_config.get('analyze_limit', 20)
 
-    # 只分析最近24小时内接收的邮件（与digest保持一致）
-    since_dt = datetime.now() - timedelta(hours=24)
+    # 只分析最近72小时内接收的邮件（与digest保持一致）
+    since_dt = datetime.now() - timedelta(hours=72)
     since_str = since_dt.isoformat()
 
-    # 从数据库获取最早的未分析邮件（24小时内）
+    # 从数据库获取最早的未分析邮件（72小时内）
     pending_emails = tracker.get_pending_analysis_emails(limit=analyze_limit, since=since_str)
     
     if not pending_emails:
