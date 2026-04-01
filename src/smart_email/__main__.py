@@ -466,7 +466,7 @@ def digest_command(test_mode: bool = False):
         check_date = (datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d')
         sent_dir = outbox.sent_dir / check_date
         if sent_dir.exists():
-            for digest_file in sent_dir.glob("digest_*.json"):
+            for digest_file in sent_dir.glob("*.json"):
                 try:
                     with open(digest_file, 'r', encoding='utf-8') as f:
                         digest_msg = json.load(f)
